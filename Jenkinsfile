@@ -35,21 +35,26 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 withSonarQubeEnv('SonarQube') {
-                    sh '''
+                    sh """
                     mvn sonar:sonar \
                     -Dsonar.projectKey=projecy-18 \
-                    -Dsonar.host.url=http://sonarqube:9000 \
-                    -Dsonar.login=$SONAR_TOKEN
-                    '''
+                    -Dsonar.host.url=http://sonarqube:9000
+                    """
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: false
                 }
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                sh '''
-                docker build -t $DOCKER_IMAGE:$TAG .
-                '''
+                sh "docker build -t $DOCKER_IMAGE:$TAG ."
             }
         }
 
@@ -66,30 +71,32 @@ pipeline {
 
         stage('Update GitOps Repo') {
             steps {
-                sh '''
+                sh """
+                rm -rf gitops-repo
                 git clone https://github.com/RichiBansal0612/gitops-repo.git
+
                 cd gitops-repo
 
-                sed -i "s|image: .*|image: $DOCKER_IMAGE:$TAG|" k8s/deployment.yaml
+                sed -i 's|image: .*|image: ${DOCKER_IMAGE}:${TAG}|' k8s/deployment.yaml
 
                 git config user.email "jenkins@ci.com"
                 git config user.name "jenkins"
 
                 git add .
-                git commit -m "Update image to $TAG"
+                git commit -m "Update image to ${TAG}" || echo "No changes to commit"
                 git push origin main
-                '''
+                """
             }
         }
     }
 
     post {
         success {
-            echo 'Pipeline executed successfully 🎉'
+            echo '🚀 Pipeline SUCCESS'
         }
 
         failure {
-            echo 'Pipeline failed ❌ check logs'
+            echo '❌ Pipeline FAILED'
         }
     }
 }
